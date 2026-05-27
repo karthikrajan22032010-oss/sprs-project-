@@ -1,0 +1,42 @@
+// ==========================================
+// SECTOR 1: CLOUD ROUTING SCRIPT
+// ==========================================
+
+function doGet(e) {
+  // ---> PASTE YOUR SPREADSHEET ID HERE <---
+  // The ID is the long mix of letters/numbers in your Google Sheet URL
+  var sheet_id = 'YOUR_SPREADSHEET_ID_HERE'; 
+  
+  var ss = SpreadsheetApp.openById(sheet_id);
+  var sector = e.parameter.sector; // Tells the cloud which ESP32 is sending data
+  var sheet;
+
+  // Choose the correct tab based on the sector
+  if (sector == 'gen') {
+    sheet = ss.getSheetByName("Generation_Data");
+  } else if (sector == 'meter') {
+    sheet = ss.getSheetByName("Meter_Data");
+  } else {
+    return ContentService.createTextOutput("Error: Unknown Sector");
+  }
+
+  var newRow = sheet.getLastRow() + 1;
+  var rowData = [];
+  rowData[0] = new Date(); // Exact Date & Time in Column A
+
+  // Sort the data into columns
+  if (sector == 'gen') {
+    rowData[1] = e.parameter.v1; // Column B: Solar
+    rowData[2] = e.parameter.v2; // Column C: Dynamo 1
+    rowData[3] = e.parameter.v3; // Column D: Dynamo 2
+    rowData[4] = e.parameter.v4; // Column E: Total Volts
+  } else if (sector == 'meter') {
+    rowData[1] = e.parameter.v1; // Column B: House Voltage
+    rowData[2] = e.parameter.v2; // Column C: Units
+    rowData[3] = e.parameter.v3; // Column D: Bill Rs
+  }
+
+  // Save to sheet
+  sheet.getRange(newRow, 1, 1, rowData.length).setValues([rowData]);
+  return ContentService.createTextOutput("Success: Data saved to " + sector);
+}
