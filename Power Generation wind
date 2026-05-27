@@ -1,0 +1,49 @@
+// ==========================================
+// SECTOR 2: POWER GENERATION STATION
+// ==========================================
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "Your_WiFi_Name";         // <--- ENTER WIFI NAME
+const char* password = "Your_WiFi_Password"; // <--- ENTER WIFI PASSWORD
+String GOOGLE_SCRIPT_ID = "YOUR_DEPLOYMENT_ID_HERE"; // <--- PASTE CLOUD DEPLOYMENT ID HERE
+
+const int solarPin = 34;
+const int dynamo1Pin = 35;
+const int dynamo2Pin = 32;
+
+unsigned long lastTime = 0;
+const int sendInterval = 15000; // Send every 15 seconds
+
+float readVoltage(int pin) {
+  int val = analogRead(pin);
+  if (val < 50) return 0.0; 
+  return (val / 4095.0) * 3.3 * 5.0; 
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  Serial.println("\nGeneration ESP32 Online.");
+}
+
+void loop() {
+  if ((millis() - lastTime) > sendInterval) {
+    float v1 = readVoltage(solarPin);
+    float v2 = readVoltage(dynamo1Pin);
+    float v3 = readVoltage(dynamo2Pin);
+    float vTotal = v1 + v2 + v3;
+
+    // Send to Cloud as 'gen' sector
+    HTTPClient http;
+    String url = "https://script.google.com/macros/s/" + GOOGLE_SCRIPT_ID + "/exec?sector=gen&v1=" + String(v1) + "&v2=" + String(v2) + "&v3=" + String(v3) + "&v4=" + String(vTotal);
+    
+    http.begin(url);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    if(http.GET() > 0) Serial.println("Generation Data Saved to Cloud.");
+    http.end();
+
+    lastTime = millis();
+  }
+}
