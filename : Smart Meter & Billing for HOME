@@ -1,0 +1,107 @@
+// ==========================================
+// SECTOR 3: SMART METER & BILLING SYSTEM
+// FEATURE: WhatsApp Bill sent every 2 minutes
+// ==========================================
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "Your_WiFi_Name";         // <--- ENTER WIFI NAME
+const char* password = "Your_WiFi_Password"; // <--- ENTER WIFI PASSWORD
+String GOOGLE_SCRIPT_ID = "YOUR_DEPLOYMENT_ID_HERE"; // <--- PASTE CLOUD DEPLOYMENT ID HERE
+
+// WhatsApp & UPI Details
+String whatsappNumber = "+919876543210";  // <--- YOUR MOBILE NUMBER
+String whatsappApiKey = "123456";         // <--- YOUR CALLMEBOT API KEY
+String upiID = "yourname@okhdfcbank";     // <--- YOUR UPI ID
+String payeeName = "SmartGrid_Dept";      // <--- PAYEE NAME (No spaces)
+
+const int housePin = 34; 
+float costPerUnit = 5.0;     
+float simulatedAmps = 2.5;   
+float totalUnits = 0.0;
+float totalBill = 0.0;
+
+// Timers
+unsigned long lastCloudTime = 0;
+const unsigned long cloudInterval = 15000;  // 15 seconds for Cloud Upload
+
+unsigned long lastWhatsAppTime = 0;
+const unsigned long whatsappInterval = 120000; // 120,000 ms = 2 Minutes for WhatsApp
+
+float readVoltage(int pin) {
+  int val = analogRead(pin);
+  if (val < 50) return 0.0; 
+  return (val / 4095.0) * 3.3 * 5.0; 
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) { 
+    delay(500); 
+    Serial.print("."); 
+  }
+  Serial.println("\nSmart Meter Online. WhatsApp updates every 2 minutes.");
+  
+  // Set the start time so it waits 2 mins from boot before the first message
+  lastWhatsAppTime = millis(); 
+}
+
+void loop() {
+  
+  // ===================================================
+  // TASK 1: Calculate & Upload to Cloud (Every 15 Sec)
+  // ===================================================
+  if ((millis() - lastCloudTime) > cloudInterval) {
+    
+    // Calculate Bill
+    float v1 = readVoltage(housePin);
+    float power_kW = (v1 * simulatedAmps) / 1000.0;
+    totalUnits += (power_kW * (15.0 / 3600.0));
+    totalBill = totalUnits * costPerUnit;
+
+    // Upload to Cloud as 'meter' sector
+    HTTPClient http;
+    String url = "https://script.google.com/macros/s/" + GOOGLE_SCRIPT_ID + "/exec?sector=meter&v1=" + String(v1) + "&v2=" + String(totalUnits) + "&v3=" + String(totalBill);
+    http.begin(url);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    if(http.GET() > 0) {
+      Serial.println("Meter Data Saved to Cloud. Current Bill: Rs " + String(totalBill));
+    }
+    http.end();
+    
+    lastCloudTime = millis();
+  }
+
+  // ===================================================
+  // TASK 2: Send WhatsApp Message (Every 2 Minutes)
+  // ===================================================
+  if ((millis() - lastWhatsAppTime) > whatsappInterval) {
+    
+    // Only send the message if there is an actual bill greater than Rs 0.00
+    if (totalBill > 0.0) {
+      Serial.println("\n>>> 2 Minutes Passed: Sending WhatsApp Update...");
+      sendWhatsApp();
+    } else {
+      Serial.println("\n>>> 2 Minutes Passed: Bill is Rs 0.00, skipping WhatsApp.");
+    }
+    
+    lastWhatsAppTime = millis();
+  }
+}
+
+void sendWhatsApp() {
+  HTTPClient http;
+  String upiLink = "upi://pay?pa=" + upiID + "&pn=" + payeeName + "&am=" + String(totalBill) + "&cu=INR";
+  String msg = "⚡ *ELECTRICITY BILL UPDATE* ⚡%0AAmount Due: *Rs " + String(totalBill) + "*%0A%0ATap to Pay:%0A" + upiLink;
+  String url = "https://api.callmebot.com/whatsapp.php?phone=" + whatsappNumber + "&text=" + msg + "&apikey=" + whatsappApiKey;
+  
+  http.begin(url);
+  int httpCode = http.GET();
+  if(httpCode == 200) {
+    Serial.println("WhatsApp Sent Successfully!");
+  } else {
+    Serial.println("WhatsApp Error Code: " + String(httpCode));
+  }
+  http.end();
+}
